@@ -24,20 +24,7 @@ const EDUCATION_LEVELS = {
   'secondary 3': 'Upper Secondary (Sec 3 4 5)',
   'secondary 4': 'Upper Secondary (Sec 3 4 5)',
   'secondary 5': 'Upper Secondary (Sec 3 4 5)',
-  
-  // O Levels
-  'o level': 'O levels',
-  'olevel': 'O levels',
-  'o-level': 'O levels',
-  
-  // A Levels
-  'a level': 'A levels',
-  'alevel': 'A levels',
-  'a-level': 'A levels',
-  'h1': 'A levels/H1',
-  'h2': 'A levels/H2',
-  'h3': 'A levels/H3',
-  
+   
   // International Baccalaureate
   'ib': 'International Baccalaureate',
   'ibdp': 'International Baccalaureate',
