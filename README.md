@@ -41,10 +41,10 @@ Example:
 
 ```json
 {
-  "input_folder": "resources/incoming",
+  "input_folder": "/user-uploads",
   "folders": {
-    "Math": ["math", "algebra", "geometry"],
-    "Physics": ["physics", "mechanics", "optics"]
+    "Math": ["math", "emath", "mathematics"],
+    "Physics": ["physics", "phy"]
   },
   "admin_folder": "/admin_review"
 }
