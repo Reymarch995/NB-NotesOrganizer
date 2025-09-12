@@ -22,7 +22,7 @@
 
 ## 💻 Installation
 ```bash
-git clone https://github.com/yourusername/study-resource-organizer.git
+git clone https://github.com/Reymarch995/NB-NotesOrganizer.git
 pip install -r requirements.txt
 python organizer.py
 ````
