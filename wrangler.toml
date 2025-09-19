@@ -1,6 +1,7 @@
 name = "study-organizer"
-main = "src/index.js"
+main = "study-organizer-worker.js"
 compatibility_date = "2025-09-20"
+account_id = "4eb0f6b95b7b3ed72ded34ffc0092ed1"
 
 [[r2_buckets]]
 binding = "STUDY_BUCKET"
