@@ -1,16 +1,13 @@
-// Study Organizer Worker — Direct Upload (No Tree, AIO Structure) v2
+// Coded with <3 by Rayhan and Team Notesbubble
+
+// Study Organizer Worker — Direct Upload (No Tree) — Secured
 // Cloudflare Workers + R2 — DIRECT upload only (no Queues, no tree reads).
-//
-// Folder rules:
-//   A level/H1|H2|H3/<Subject>/(General Notes | Chapters | General Practice)/[Chapter N]/<filename>
-//   O level/(Upper Secondary (Secondary 3-4) | Lower Secondary (Secondary 1-2))
-//         /<Subject Group>/<Subject>/(General Notes | Chapters | General Practice)/[Chapter N]/<filename>
-// Unknown stream OR subject → Admin Review/<filename>.
-//
-// Endpoints:
-//   GET  /health
-//   GET  /dry-run?name=<filename>
-//   POST /upload?name=<filename>
+// Based on your current v2 file; adds:
+//   • x-api-key auth on /upload (use wrangler secret UPLOAD_API_KEY)
+//   • Overwrite guard (auto-suffix " (1)", "(2)" if key exists)
+//   • Basic size guard via Content-Length (configurable)
+//   • CORS allows x-api-key header
+// Routing logic remains unchanged (A level / O level only).
 
 /** wrangler.toml (no Queues)
 name = "study-organizer"
@@ -22,30 +19,44 @@ binding = "STUDY_BUCKET"
 bucket_name = "notesbubble"
 */
 
+// ===== Config =====
+const MAX_BYTES = 50 * 1024 * 1024; // 50 MB cap; adjust if needed
+
 export default {
   async fetch(req, env) {
     const url = new URL(req.url);
-    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors() });
+    if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors(req) });
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      return json({ ok: true, service: 'study-organizer-direct' });
+      return json({ ok: true, service: 'study-organizer-direct' }, 200, req);
     }
 
     if (req.method === 'GET' && url.pathname === '/dry-run') {
       const name = cleanName(getIncomingName(url, req) || '');
       const key = determineTargetKey(name);
-      return json({ name, targetKey: key });
+      return json({ name, targetKey: key }, 200, req);
     }
 
     if (req.method === 'POST' && url.pathname === '/upload') {
+      if (!checkAuth(req, env)) return unauthorized(req);
+
       const name = cleanName(getIncomingName(url, req) || 'upload.bin');
       const ct = req.headers.get('content-type') || 'application/octet-stream';
-      const key = determineTargetKey(name);
+
+      // Size guard (best-effort; depends on Content-Length header presence)
+      const len = Number(req.headers.get('content-length') || '0');
+      if (len && len > MAX_BYTES) {
+        return json({ error: 'too_large', limit: MAX_BYTES }, 413, req);
+      }
+
+      const rawKey = determineTargetKey(name);
+      const key = await ensureUniqueKey(env.STUDY_BUCKET, rawKey);
+
       await env.STUDY_BUCKET.put(key, req.body, { httpMetadata: { contentType: ct } });
-      return json({ ok: true, key });
+      return json({ ok: true, key }, 200, req);
     }
 
-    return new Response('Study Organizer (direct, no tree)', { headers: cors() });
+    return new Response('Study Organizer (direct, no tree)', { headers: cors(req) });
   }
 };
 
@@ -212,11 +223,36 @@ function extractChapter(lower){
   return m ? Number(m[1]) : null;
 }
 
+// ---------------------------- Security helpers ----------------------------
+function checkAuth(req, env){
+  const k = req.headers.get('x-api-key');
+  return Boolean(k && env.UPLOAD_API_KEY && k === env.UPLOAD_API_KEY);
+}
+
+function unauthorized(req){
+  return json({ error: 'unauthorized' }, 401, req);
+}
+
+async function ensureUniqueKey(bucket, key){
+  const slash = key.lastIndexOf('/');
+  const dir = slash >= 0 ? key.slice(0, slash + 1) : '';
+  const base = slash >= 0 ? key.slice(slash + 1) : key;
+  const m = base.match(/^(.*?)(\.[^.]+)?$/);
+  const stem = m ? m[1] : base;
+  const ext = m && m[2] ? m[2] : '';
+  let candidate = key;
+  let i = 1;
+  while (await bucket.head(candidate)) {
+    candidate = `${dir}${stem} (${i++})${ext}`;
+  }
+  return candidate;
+}
+
 // ---------------------------- Utils ----------------------------
 function getIncomingName(url, req){ return url.searchParams.get('name') || req.headers.get('x-filename'); }
 function cleanName(s){ return s ? s.replace(/^['\"]+|['\"]+$/g, '').trim() : s; }
 function basename(p){ return p.split('/').pop(); }
 function join(...parts){ return parts.filter(Boolean).join('/').replace(/\/+/, '/'); }
-function cors(){ return { 'access-control-allow-origin':'*', 'access-control-allow-methods':'GET, POST, OPTIONS', 'access-control-allow-headers':'content-type, x-filename' }; }
-function json(obj, status=200){ return new Response(JSON.stringify(obj), { status, headers: { 'content-type':'application/json', ...cors() } }); }
+function cors(req){ return { 'access-control-allow-origin': req.headers.get('origin') || '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type, x-filename, x-api-key' }; }
+function json(obj, status=200, req){ return new Response(JSON.stringify(obj), { status, headers: { 'content-type':'application/json', ...cors(req) } }); }
 function hasAny(tokens, arr){ return arr.some(x => tokens.includes(x)); }
