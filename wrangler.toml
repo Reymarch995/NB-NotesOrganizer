@@ -1,11 +1,7 @@
-name = "study-organizer-worker"
-compatibility_date = "2024-05-15"
+name = "study-organizer"
+main = "src/index.js"
+compatibility_date = "2025-09-20"
 
 [[r2_buckets]]
 binding = "STUDY_BUCKET"
-bucket_name = "study-resources"
-
-[[queues.consumers]]
-queue = "r2-events"
-max_batch_size = 10
-max_batch_timeout = 30
+bucket_name = "notesbubble"
