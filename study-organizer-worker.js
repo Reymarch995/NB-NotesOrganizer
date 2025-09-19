@@ -1,13 +1,11 @@
-// Made with <3 by Rayhan & Team Studybubble
-
-// Study Organizer Worker — Direct Upload (No Tree, A/O Structure + H3 + MI)
+// Study Organizer Worker — Direct Upload (No Tree, AIO Structure) v2
 // Cloudflare Workers + R2 — DIRECT upload only (no Queues, no tree reads).
 //
-// Folder rules you specified:
+// Folder rules:
 //   A level/H1|H2|H3/<Subject>/(General Notes | Chapters | General Practice)/[Chapter N]/<filename>
 //   O level/(Upper Secondary (Secondary 3-4) | Lower Secondary (Secondary 1-2))
 //         /<Subject Group>/<Subject>/(General Notes | Chapters | General Practice)/[Chapter N]/<filename>
-// If stream OR subject cannot be determined → Admin Review/<filename>.
+// Unknown stream OR subject → Admin Review/<filename>.
 //
 // Endpoints:
 //   GET  /health
@@ -53,7 +51,7 @@ export default {
 
 // ---------------------------- Routing ----------------------------
 function determineTargetKey(name) {
-  const filename = basename(name);
+  const filename = basename(name); // NEVER mutate original filename
   const lower = filename.toLowerCase();
   const tokens = tokenize(lower);
 
@@ -98,12 +96,29 @@ function routeByType(lower, baseParts, filename) {
 function tokenize(s){ return s.split(/[^a-z0-9]+/).filter(Boolean); }
 
 function detectStream(lower, tokens){
+  // *** Give O-level precedence when we clearly see Sec + number ***
+  if (isOLevelBySec(tokens, lower)) return 'O level';
+
   // A level cues: H1/H2/H3, JC/MI, or explicit 'A level(s)'
-  const jcTokens = ['jc','acjc','ajc','asrjc','cjc','dhs','ejc','hci','ijc','jjc','jpjc','mi','mjc','njc','nyjc','pjc','ri','rvhs','sajc','srjc','tjc','tmjc','vjc','yijc','yjc'];
-  if (tokens.some(t => t==='h1'||t==='h2'||t==='h3') || tokens.includes('a') && tokens.includes('level') || hasAny(tokens, jcTokens)) return 'A level';
-  if (/\bo[- ]?levels?\b/.test(lower) || tokens.some(t=>/^sec[1-5]$/.test(t)) || tokens.includes('secondary')) return 'O level';
+  if (tokens.includes('h3') || tokens.includes('h2') || tokens.includes('h1')) return 'A level';
+  const jcTokens = ['jc','acjc','ajc','asrjc','cjc','dhs','ejc','hci','ijc','jjc','jpjc','mi','mjc','njc','nyjc','pjc','ri','rvhs','sajc','srjc','tjc','tmjc','vjc','yijc','yjc','rjc'];
+  if (hasAny(tokens, jcTokens) || /\ba[- ]?levels?\b/.test(lower)) return 'A level';
+
+  // O-level cues (secondary without number)
+  if (/\bo[- ]?levels?\b/.test(lower) || /\bsecondary\b/.test(lower)) return 'O level';
+  if (/(upper\s*secondary|lower\s*secondary)/.test(lower)) return 'O level';
+
   if (tokens.includes('psle') || tokens.includes('primary')) return 'PSLE';
   return null;
+}
+
+function isOLevelBySec(tokens, lower){
+  // Matches: "sec 3", "sec3", "secondary 4" etc.
+  if (/(sec\s*[1-5]|secondary\s*[1-5])/.test(lower)) return true;
+  // Token pattern: [ 'sec', '4' ] etc.
+  const hasSec = tokens.includes('sec');
+  const hasNum = tokens.some(t => ['1','2','3','4','5'].includes(t));
+  return hasSec && hasNum;
 }
 
 function detectALevel(tokens){ if (tokens.includes('h3')) return 'H3'; if (tokens.includes('h2')) return 'H2'; if (tokens.includes('h1')) return 'H1'; return null; }
@@ -117,9 +132,8 @@ function detectASubject(tokens){
   if (has('math') || has('maths') || has('mathematics')) return 'Mathematics';
   if (has('econs') || has('economics')) return 'Economics';
   if (has('computing')) return 'Computing';
-  if (has('gp') || has('general') && has('paper')) return 'General Paper';
+  if (has('gp') || (has('general') && has('paper'))) return 'General Paper';
   if (has('ki') || (has('knowledge') && has('inquiry')) ) return 'Knowledge and Inquiry';
-  // MTLs
   if (has('chinese') || has('cl')) return 'Chinese';
   if (has('malay') || has('ml')) return 'Malay';
   if (has('tamil') || has('tl')) return 'Tamil';
@@ -132,8 +146,12 @@ const O_LOWER = 'Lower Secondary (Secondary 1-2)';
 function detectOSecondaryBand(lower, tokens){
   if (/(sec\s*3|sec3|secondary\s*3|sec\s*4|sec4|secondary\s*4|upper\s*secondary)/.test(lower)) return O_UPPER;
   if (/(sec\s*1|sec1|secondary\s*1|sec\s*2|sec2|secondary\s*2|lower\s*secondary)/.test(lower)) return O_LOWER;
-  // Fallback: if mentions 'sec' with a number, decide by number
   for (const t of tokens){ const m=t.match(/^sec(\d)$/); if(m){ const n=Number(m[1]); return n>=3?O_UPPER:O_LOWER; }}
+  if (tokens.includes('sec')){
+    // If just 'sec' + number as separate tokens
+    const nTok = tokens.find(t=>['1','2','3','4','5'].includes(t));
+    if (nTok){ const n=Number(nTok); return n>=3?O_UPPER:O_LOWER; }
+  }
   return null;
 }
 
@@ -148,7 +166,7 @@ function detectOSubject(tokens){
   if ((has('combined')||has('comb')) && (has('chem')||has('chemistry'))) return { group:'Combined Science (CP-CB-CC)', leaf:'Combined Chemistry' };
   if ((has('combined')||has('comb')) && (has('physics')||has('phy'))) return { group:'Combined Science (CP-CB-CC)', leaf:'Combined Physics' };
   if ((has('combined')||has('comb')) && (has('biology')||has('bio'))) return { group:'Combined Science (CP-CB-CC)', leaf:'Combined Biology' };
-  if (has('combined') || has('comb') || has('science') && !(has('pure'))) return { group:'Combined Science (CP-CB-CC)', leaf:'Combined Science' };
+  if (has('combined') || (has('science') && !has('pure'))) return { group:'Combined Science (CP-CB-CC)', leaf:'Combined Science' };
   // English
   if (has('english') || has('eng') || has('el')) return { group:'English', leaf:'English' };
   // Mathematics
@@ -157,19 +175,19 @@ function detectOSubject(tokens){
   if (has('poa') || (has('principles')&&has('of')&&has('accounts'))) return { group:'Mathematics (AM-EM-POA)', leaf:'Principles of Accounts' };
   if (has('math') || has('maths') || has('mathematics')) return { group:'Mathematics (AM-EM-POA)', leaf:'Mathematics' };
   // MTLs
-  if (has('higher') && has('chinese') || has('hcl')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Higher Chinese' };
-  if (has('higher') && has('malay') || has('hml')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Higher Malay' };
-  if (has('higher') && has('tamil') || has('htl')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Higher Tamil' };
+  if ((has('higher') && has('chinese')) || has('hcl')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Higher Chinese' };
+  if ((has('higher') && has('malay')) || has('hml')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Higher Malay' };
+  if ((has('higher') && has('tamil')) || has('htl')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Higher Tamil' };
   if (has('chinese') || has('cl')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Chinese' };
   if (has('malay') || has('ml')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Malay' };
   if (has('tamil') || has('tl')) return { group:'MTL (incl. Higher MTL and NTIL)', leaf:'Tamil' };
   // Humanities
-  if (has('social')&&has('studies') || has('ss')) return { group:'Elective Humanities (EH-EG-SS)', leaf:'Social Studies' };
+  if ((has('social')&&has('studies')) || has('ss')) return { group:'Elective Humanities (EH-EG-SS)', leaf:'Social Studies' };
   if ((has('elective')&&has('history')) || has('ehist')) return { group:'Elective Humanities (EH-EG-SS)', leaf:'Elective History' };
   if ((has('elective')&&has('geography')) || has('egeo')) return { group:'Elective Humanities (EH-EG-SS)', leaf:'Elective Geography' };
   if (has('pure')&&has('history')) return { group:'Pure Humanities (PH-PG-PL)', leaf:'Pure History' };
   if (has('pure')&&has('geography')) return { group:'Pure Humanities (PH-PG-PL)', leaf:'Pure Geography' };
-  if (has('pure')&&has('literature') || has('lit')) return { group:'Pure Humanities (PH-PG-PL)', leaf:'Pure Literature' };
+  if ((has('pure')&&has('literature')) || has('lit')) return { group:'Pure Humanities (PH-PG-PL)', leaf:'Pure Literature' };
   // Creative Arts
   if (has('dnt') || (has('design')&&has('technology'))) return { group:'Creative Arts (DNT-ART-MUS-NFS)', leaf:'Design and Technology' };
   if (has('art')) return { group:'Creative Arts (DNT-ART-MUS-NFS)', leaf:'Art' };
