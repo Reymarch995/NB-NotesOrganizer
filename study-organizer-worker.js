@@ -224,10 +224,14 @@ function extractChapter(lower){
 }
 
 // ---------------------------- Security helpers ----------------------------
-function checkAuth(req, env){
+function checkAuth(req, env) {
   const k = req.headers.get('x-api-key');
-  return Boolean(k && env.UPLOAD_API_KEY && k === env.UPLOAD_API_KEY);
+  if (!k) return false;
+  if (env.UPLOAD_API_KEY && k === env.UPLOAD_API_KEY) return true;
+  if (env.UPLOAD_API_KEY_2 && k === env.UPLOAD_API_KEY_2) return true;
+  return false;
 }
+
 
 function unauthorized(req){
   return json({ error: 'unauthorized' }, 401, req);
